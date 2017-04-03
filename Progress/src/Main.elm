@@ -29,11 +29,22 @@ type Page
     | RunnerPage
 
 
+authPages : List Page
+authPages =
+    [ RunnerPage ]
+
+
 init : Flags -> Navigation.Location -> ( Model, Cmd Msg )
 init flags location =
     let
         page =
             hashToPage location.hash
+
+        loggedIn =
+            flags.token /= Nothing
+
+        ( updatedPage, cmd ) =
+            authRedirect page loggedIn
 
         ( leaderBoardInitModel, leaderboardCmd ) =
             LeaderBoard.init
@@ -45,7 +56,7 @@ init flags location =
             Runner.init
 
         initModel =
-            { page = page
+            { page = updatedPage
             , leaderBoard = leaderBoardInitModel
             , login = loginInitModel
             , runner = runnerInitModel
@@ -58,6 +69,7 @@ init flags location =
                 [ Cmd.map LeaderBoardMsg leaderboardCmd
                 , Cmd.map LoginMsg loginCmd
                 , Cmd.map RunnerMsg runnerCmd
+                , cmd
                 ]
     in
         ( initModel, cmds )
@@ -83,10 +95,19 @@ update msg model =
             ( model, Navigation.newUrl <| pageToHash page )
 
         ChangePage page ->
-            ( { model | page = page }, Cmd.none )
+            let
+                ( updatedPage, cmd ) =
+                    authRedirect page model.loggedIn
+            in
+                ( { model | page = updatedPage }, cmd )
 
         Logout ->
-            ( { model | loggedIn = False, token = Nothing }, deleteToken () )
+            ( { model | loggedIn = False, token = Nothing }
+            , Cmd.batch
+                [ deleteToken ()
+                , Navigation.modifyUrl <| pageToHash LeaderBoardPage
+                ]
+            )
 
         LeaderBoardMsg msg ->
             let
@@ -134,6 +155,19 @@ update msg model =
                 )
 
 
+authForPage : Page -> Bool -> Bool
+authForPage page loggedIn =
+    loggedIn || not (List.member page authPages)
+
+
+authRedirect : Page -> Bool -> ( Page, Cmd Msg )
+authRedirect page loggedIn =
+    if authForPage page loggedIn then
+        ( page, Cmd.none )
+    else
+        ( LoginPage, Navigation.newUrl <| pageToHash LoginPage )
+
+
 
 -- view
 
@@ -172,20 +206,22 @@ authHeaderView model =
         a [ onClick (Navigate LoginPage) ] [ text "Login" ]
 
 
+addRunnerLinkView : Model -> Html Msg
+addRunnerLinkView { loggedIn } =
+    if loggedIn then
+        a [ onClick (Navigate RunnerPage) ] [ text "Add Runner" ]
+    else
+        text ""
+
+
 pageHeader : Model -> Html Msg
 pageHeader model =
     header []
-        [ a [ href "#/" ] [ text "Race Results" ]
+        [ a [ onClick (Navigate LeaderBoardPage) ] [ text "Race Results" ]
         , ul []
-            [ li []
-                [ a [ onClick (Navigate LeaderBoardPage) ] [ text "Link" ]
-                ]
-            ]
+            [ li [] [ addRunnerLinkView model ] ]
         , ul []
-            [ li []
-                [ authHeaderView model
-                ]
-            ]
+            [ li [] [ authHeaderView model ] ]
         ]
 
 
@@ -224,7 +260,7 @@ hashToPage hash =
         "#login" ->
             LoginPage
 
-        "#runner" ->
+        "#add" ->
             RunnerPage
 
         _ ->
@@ -241,7 +277,7 @@ pageToHash page =
             "#login"
 
         RunnerPage ->
-            "#runner"
+            "#add"
 
         NotFound ->
             "#notfound"
