@@ -7,6 +7,10 @@ import Json.Encode as JE
 import Json.Decode as JD
 import Json.Decode.Pipeline as JDP
 import WebSocket exposing (..)
+import Time
+import Date
+import Date.Extra.Format as DateFormat
+import Date.Extra.Config.Config_en_us as DateConfig
 
 
 -- model
@@ -88,6 +92,7 @@ type Msg
     = SearchInput String
     | Search
     | WsMessage String
+    | Tick Time.Time
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -102,6 +107,30 @@ update msg model =
         WsMessage wsMsg ->
             wsMessage wsMsg model
 
+        Tick time ->
+            ( tick model time, Cmd.none )
+
+
+tick : Model -> Time.Time -> Model
+tick model time =
+    let
+        updatedRunners =
+            List.map (advancedDistance time) model.runners
+    in
+        { model | runners = updatedRunners }
+
+
+advancedDistance : Float -> Runner -> Runner
+advancedDistance time runner =
+    let
+        elapsedMinutes =
+            (time - runner.lastMarkerTime) / 1000 / 60
+    in
+        if runner.lastMarkerTime > 0 then
+            { runner | estimatedDistance = runner.lastMarkerDistance + (runner.pace * elapsedMinutes) }
+        else
+            runner
+
 
 wsMessage : String -> Model -> ( Model, Cmd Msg )
 wsMessage wsMsg model =
@@ -110,6 +139,20 @@ wsMessage wsMsg model =
             case name of
                 "new runner" ->
                     ( { model | runners = runner :: model.runners }, Cmd.none )
+
+                "update runner" ->
+                    let
+                        updatedRunners =
+                            List.map
+                                (\currentRunner ->
+                                    if currentRunner.id == runner.id then
+                                        runner
+                                    else
+                                        currentRunner
+                                )
+                                model.runners
+                    in
+                        ( { model | runners = updatedRunners }, Cmd.none )
 
                 _ ->
                     ( { model | error = Just ("Unrecognised Message: " ++ name) }, Cmd.none )
@@ -189,17 +232,54 @@ runners { query, runners } =
 
 
 runner : Runner -> Html Msg
-runner { name, location, age, bib, estimatedDistance } =
-    tr []
-        [ td [] [ text name ]
-        , td [] [ text location ]
-        , td [] [ text (toString age) ]
-        , td [] [ text (toString bib) ]
-        , td []
-            [ text "1 mi @ 08:30AM (TODO)"
+runner runner =
+    let
+        { name, location, age, bib, estimatedDistance } =
+            runner
+    in
+        tr []
+            [ td [] [ text name ]
+            , td [] [ text location ]
+            , td [] [ text (toString age) ]
+            , td [] [ text (toString bib) ]
+            , td [] [ lastMarker runner ]
+            , td [] [ text (formatDistance estimatedDistance) ]
             ]
-        , td [] [ text (toString estimatedDistance) ]
-        ]
+
+
+lastMarker : Runner -> Html Msg
+lastMarker runner =
+    if runner.lastMarkerTime > 0 then
+        text
+            ((formatDistance runner.lastMarkerDistance)
+                ++ " mi @ "
+                ++ (formatTime runner.lastMarkerTime)
+            )
+    else
+        text ""
+
+
+formatTime : Float -> String
+formatTime time =
+    if time > 0 then
+        time
+            |> Date.fromTime
+            |> DateFormat.format DateConfig.config "%H:%M:%S %P"
+    else
+        ""
+
+
+formatDistance : Float -> String
+formatDistance distance =
+    if distance <= 0 then
+        ""
+    else
+        distance
+            |> (*) 100
+            |> round
+            |> toFloat
+            |> flip (/) 100
+            |> toString
 
 
 runnersHeader : Html Msg
@@ -222,4 +302,7 @@ runnersHeader =
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
-    listen url WsMessage
+    Sub.batch
+        [ listen url WsMessage
+        , Time.every Time.second Tick
+        ]
