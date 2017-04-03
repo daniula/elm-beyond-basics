@@ -73,6 +73,7 @@ type Msg
     | LeaderBoardMsg LeaderBoard.Msg
     | LoginMsg Login.Msg
     | RunnerMsg Runner.Msg
+    | Logout
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -83,6 +84,9 @@ update msg model =
 
         ChangePage page ->
             ( { model | page = page }, Cmd.none )
+
+        Logout ->
+            ( { model | loggedIn = False, token = Nothing }, deleteToken () )
 
         LeaderBoardMsg msg ->
             let
@@ -160,6 +164,14 @@ view model =
             ]
 
 
+authHeaderView : Model -> Html Msg
+authHeaderView model =
+    if model.loggedIn then
+        a [ onClick Logout ] [ text "Logout" ]
+    else
+        a [ onClick (Navigate LoginPage) ] [ text "Login" ]
+
+
 pageHeader : Model -> Html Msg
 pageHeader model =
     header []
@@ -171,7 +183,7 @@ pageHeader model =
             ]
         , ul []
             [ li []
-                [ a [ onClick (Navigate LoginPage) ] [ text "Login" ]
+                [ authHeaderView model
                 ]
             ]
         ]
@@ -258,3 +270,6 @@ main =
 
 
 port saveToken : String -> Cmd msg
+
+
+port deleteToken : () -> Cmd msg
