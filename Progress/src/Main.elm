@@ -29,8 +29,8 @@ type Page
     | RunnerPage
 
 
-init : Navigation.Location -> ( Model, Cmd Msg )
-init location =
+init : Flags -> Navigation.Location -> ( Model, Cmd Msg )
+init flags location =
     let
         page =
             hashToPage location.hash
@@ -49,8 +49,8 @@ init location =
             , leaderBoard = leaderBoardInitModel
             , login = loginInitModel
             , runner = runnerInitModel
-            , token = Nothing
-            , loggedIn = False
+            , token = flags.token
+            , loggedIn = flags.token /= Nothing
             }
 
         cmds =
@@ -100,13 +100,24 @@ update msg model =
 
                 loggedIn =
                     token /= Nothing
+
+                saveTokenCmd =
+                    case token of
+                        Just jwt ->
+                            saveToken jwt
+
+                        Nothing ->
+                            Cmd.none
             in
                 ( { model
                     | login = loginModel
                     , token = token
                     , loggedIn = loggedIn
                   }
-                , Cmd.map LoginMsg cmd
+                , Cmd.batch
+                    [ Cmd.map LoginMsg cmd
+                    , saveTokenCmd
+                    ]
                 )
 
         RunnerMsg msg ->
@@ -231,11 +242,19 @@ locationToMsg location =
         |> ChangePage
 
 
-main : Program Never Model Msg
+type alias Flags =
+    { token : Maybe String
+    }
+
+
+main : Program Flags Model Msg
 main =
-    Navigation.program locationToMsg
+    Navigation.programWithFlags locationToMsg
         { init = init
         , update = update
         , view = view
         , subscriptions = subscriptions
         }
+
+
+port saveToken : String -> Cmd msg
