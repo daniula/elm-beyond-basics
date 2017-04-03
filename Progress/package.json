@@ -4,6 +4,7 @@
   "description": "",
   "main": "Main.js",
   "scripts": {
+    "start": "elm install && gulp default",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
